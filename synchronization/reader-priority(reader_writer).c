@@ -1,89 +1,110 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <unistd.h>
 
-#define NUM_READERS 3
-#define NUM_WRITERS 2
+pthread_mutex_t mutex;
+sem_t wrt;
 
-int shared_data = 0;
-int readers = 0;
-int write_requests = 0;
-sem_t mutex, read_lock, write_lock;
+int readers_count = 0;
+int data = 0;
 
 void *reader(void *arg) {
-    for(int  i = 0 ; i< 10 ; i++) {
-        sem_wait(&mutex);
-        readers++;
-        if (readers == 1) {
-            sem_wait(&write_lock);
-        }
-        sem_post(&mutex);
+    int reader_id = *((int *)arg);
 
-        printf("Reader %d reads: %d\n", *(int*)arg, shared_data);
+    pthread_mutex_lock(&mutex);
+    readers_count++;
 
-        sem_wait(&mutex);
-        readers--;
-        if (readers == 0) {
-            sem_post(&write_lock);
-        }
-        sem_post(&mutex);
-
-         sleep(1);
+    // If the first reader, lock the writers
+    if (readers_count == 1) {
+        sem_wait(&wrt);
     }
+
+    pthread_mutex_unlock(&mutex);
+
+    // Read data
+    printf("Reader %d reads: %d\n", reader_id, data);
+
+    pthread_mutex_lock(&mutex);
+    readers_count--;
+
+    // If no more readers, unlock the writers
+    if (readers_count == 0) {
+        sem_post(&wrt);
+    }
+
+    pthread_mutex_unlock(&mutex);
+
+    // Sleep for a while to simulate other work
+    sleep(1);
+
+   // return NULL;
 }
 
 void *writer(void *arg) {
-    for(int i = 0 ; i < 10 ; i++) {
-        sem_wait(&mutex);
-        write_requests++;
-        if (write_requests == 1) {
-            sem_wait(&read_lock);
-        }
-        sem_post(&mutex);
+    int writer_id = *((int *)arg);
 
-        sem_wait(&write_lock);
+    sem_wait(&wrt);
 
-        shared_data++;
-        printf("Writer %d writes: %d\n", *(int*)arg, shared_data);
+    // Write data
+    data++;
+    printf("Writer %d writes: %d\n", writer_id, data);
 
-        sem_post(&write_lock);
+    sem_post(&wrt);
 
-        sem_wait(&mutex);
-        write_requests--;
-        if (write_requests == 0) {
-            sem_post(&read_lock);
-        }
-        sem_post(&mutex);
-         sleep(1);
-    }
+    // Sleep for a while to simulate other work
+    sleep(1);
+
+   // return NULL;
 }
 
 int main() {
-    pthread_t reader_threads[NUM_READERS], writer_threads[NUM_WRITERS];
-    int reader_ids[NUM_READERS], writer_ids[NUM_WRITERS];
 
-    sem_init(&mutex, 0, 1);
-    sem_init(&read_lock, 0, 1);
-    sem_init(&write_lock, 0, 1);
+    pthread_mutex_init(&mutex, NULL);
+    sem_init(&wrt, 0, 1);
 
-    for (int i = 0; i < NUM_READERS; i++) {
-        reader_ids[i] = i;
-        pthread_create(&reader_threads[i], NULL, reader, &reader_ids[i]);
+    // Rest of the code...
+
+    int no_r, no_w;
+    printf("Enter the number of readers and writers: ");
+    scanf("%d %d", &no_r, &no_w);
+
+    pthread_t read[no_r], write[no_w];
+    int reader_ids[no_r], writer_ids[no_w];
+
+    for (int i = 0; i < no_r; i++) {
+        reader_ids[i] = i + 1;
+        pthread_create(&read[i], NULL, reader, &reader_ids[i]);
     }
 
-    for (int i = 0; i < NUM_WRITERS; i++) {
-        writer_ids[i] = i;
-        pthread_create(&writer_threads[i], NULL, writer, &writer_ids[i]);
+    for (int i = 0; i < no_w; i++) {
+        writer_ids[i] = i + 1;
+        pthread_create(&write[i], NULL, writer, &writer_ids[i]);
     }
 
-    for (int i = 0; i < NUM_READERS; i++) {
-        pthread_join(reader_threads[i], NULL);
+    // Let the simulation run for a while
+    sleep(10);
+
+    // Cancel threads (this is just for the example, in a real scenario, you'd need to manage threads more gracefully)
+    for(int i = 0; i < no_r; i++) {
+        pthread_cancel(read[i]);
     }
 
-    for (int i = 0; i < NUM_WRITERS; i++) {
-        pthread_join(writer_threads[i], NULL);
+    for (int i = 0; i < no_w; i++) {
+        pthread_cancel(write[i]);
     }
+
+    // Join threads (again, in a real scenario, you'd need a more robust synchronization mechanism)
+    for (int i = 0; i < no_r; i++) {
+        pthread_join(read[i], NULL);
+    }
+
+    for (int i = 0; i < no_w; i++) {
+        pthread_join(write[i], NULL);
+    }
+
+    pthread_mutex_destroy(&mutex);
+    sem_destroy(&wrt);
 
     return 0;
 }
